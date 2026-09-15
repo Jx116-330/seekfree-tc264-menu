@@ -1,11 +1,11 @@
 # 菜单核心回归测试：编译并运行三个主机侧测试，失败时退出码非 0。
 #
-# 用法：pwsh -File .\run.ps1   # 默认编译上一级 menu\ 里的核心
+# 用法：pwsh -File .\run.ps1   # 默认编译 ..\firmware\code\menu 里的核心
 #       pwsh -File .\run.ps1 -MenuDir D:\path\menu  # 指定其他菜单核心目录
 #
 # 只做主机侧编译与运行，不碰固件工程；产物写在 %TEMP%\menu-live-test。
 param([string]$MenuDir = "")
-if ([string]::IsNullOrEmpty($MenuDir)) { $MenuDir = Join-Path $PSScriptRoot "..\menu" }
+if ([string]::IsNullOrEmpty($MenuDir)) { $MenuDir = Join-Path $PSScriptRoot "..\firmware\code\menu" }
 
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path (Join-Path $MenuDir "menu.c"))) {

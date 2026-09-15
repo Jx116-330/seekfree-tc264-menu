@@ -6,8 +6,7 @@
 *.hex
 *.map
 
-# IDE / 工具目录
+# IDE / 工具目录（注意：.settings/ 必须入库，它是 ADS 的器件配置）
 Debug/
 Release/
-.settings/
 .mimosa/

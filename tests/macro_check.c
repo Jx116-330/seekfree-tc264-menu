@@ -1,5 +1,5 @@
 /*
- * 宏形态检查：用与menu/menu_app.c完全相同的
+ * 宏形态检查：用与 firmware/code/menu/menu_app.c 完全相同的
  * MENU_LIVE / MENU_LIVE_VAR / MENU_LIVE_ENUM / MENU_U16 调用形式单独编译，
  * 核对展开后的字段（类型、绑定地址、精度、单位、枚举标签、只读位）是否符合
  * 预期——menu_app.c 依赖 TC264 头文件，主机编译不了，这一层就是它的替身。
