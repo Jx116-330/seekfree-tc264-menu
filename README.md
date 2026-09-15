@@ -21,7 +21,7 @@
 
 ## 用 ADS 编译（克隆后三步）
 
-1. `git clone https://github.com/Jx116-330/portable-menu-minimal.git`
+1. `git clone https://github.com/Jx116-330/seekfree-tc264-menu.git`
 2. ADS → `File → Import → General → Existing Projects into Workspace` →
    选择仓库里的 **`firmware`** 目录 → Finish
 3. 选中工程 → `Project → Build Project`（首次会自动生成 `firmware/Debug/`）
