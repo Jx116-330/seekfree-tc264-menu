@@ -1,0 +1,13 @@
+# 构建产物与主机测试产物
+*.exe
+*.o
+*.obj
+*.elf
+*.hex
+*.map
+
+# IDE / 工具目录
+Debug/
+Release/
+.settings/
+.mimosa/

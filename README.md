@@ -1,474 +1,84 @@
-# 菜单最小可移植版使用说明
+# Portable Menu — 可移植单片机菜单核心
 
-这份菜单是从你当前 TC387 工程里的菜单、按键、编码器、IPS200 显示逻辑中抽出来的**最小整合版**。
+C99 写的菜单引擎：**核心不依赖任何 MCU、屏幕或按键库**，只用到 `stdbool.h`、`stddef.h`、`stdint.h`、`stdio.h`、`string.h`。
+存储由调用方提供（静态对象），不用堆；放进超循环或 RTOS 任务里都可以。
 
-它的目标很明确：
-- 只保留菜单本体
-- 保留 IPS200 显示
-- 保留 4 键驱动
-- 保留机械编码器驱动
-- 去掉 GPS / PID / Flash / Path 等业务耦合
+> **v2 说明**：这一版与旧版 `portable-menu-minimal`（`menu_task()` / `menu_set_status()` 那套 API）
+> **不兼容**，属于重写。旧版仍可通过标签
+> [v1](https://github.com/jx116-330/portable-menu-minimal/tree/v1) 查看。
 
----
+## 能做什么
 
-# 1. 文件说明
+- **参数编辑**：开关、整数（i8/u8/i16/u16/i32/u32）、浮点、枚举；每个参数可以有自己独立的多档步长（旋钮切换粗调/细调）
+- **只读与绑定项**：值可来自回调，读写都走业务接口（例如后台提交硬件写参、带忙碌/失败状态）
+- **实时数值行**：`MENU_LIVE` 系列，一行宏搞定——只读，值一变核心自动重画那一行，**不需要写任何回调**
+- **实时页面**：上半屏自绘（进度条、波形、图像、状态条），下半屏照常调参；
+  `enter` / `tick` / `draw` / `update` / `is_dirty` / `event` / `can_leave` / `leave` 全部按需实现
+- **按键语义化**：页面可优先接管按键，其余交给核心的导航与编辑逻辑
 
-本文件夹只有三个文件：
+## 目录结构
 
-- `menu.h`
-- `menu.c`
-- `README.md`
+| 路径 | 内容 |
+| --- | --- |
+| `menu/menu.h` | 公开接口：类型、配置宏、页面与钩子定义 |
+| `menu/menu.c` | 核心实现：页面栈、数值编辑、绘制调度、实时数值行 |
+| `menu/menu_app.c`、`menu/menu_app.h` | TC264（逐飞库 + IPS200）**参考接入** + 四个示例页；编译它需要逐飞 TC264 工程 |
+| `menu/README.md` | 完整使用说明：操作、增删参数/页面、实时数值、实时页心智模型与从零教程 |
+| `tests/` | 主机回归测试：gcc 秒级跑完，含核心行为断言与“README 示例 ↔ 示例文件”一致性检查 |
 
-其中：
-
-## `menu.h`
-负责：
-- 菜单结构体定义
-- 按键与编码器引脚宏定义
-- 菜单对外接口声明
-
-## `menu.c`
-负责：
-- 4 键扫描
-- 编码器解码
-- IPS200 菜单显示
-- 菜单切换逻辑
-
-## `README.md`
-负责：
-- 告诉你怎么接入
-- 告诉你怎么定义菜单
-- 告诉你怎么写动作函数
-
----
-
-# 2. 这份菜单当前依赖什么
-
-它不是完全脱离逐飞库的“纯 C 标准版”，它仍然依赖你工程里的这些底层库：
-
-- `zf_common_typedef.h`
-- `zf_common_debug.h`
-- `zf_driver_gpio.h`
-- `zf_driver_delay.h`
-- `zf_device_ips200.h`
-
-也就是说，这份菜单最适合直接放进你的 **TC387 + 逐飞库工程** 中用。
-
----
-
-# 3. 默认硬件引脚
-
-## 按键
-在 `menu.h` 中定义：
+## 30 秒接入
 
 ```c
-#define MENU_KEY_LIST {P20_2, P20_8, P20_6, P20_7}
+/* 1. 实现显示适配层：按设备能力填，NULL 表示不支持该操作 */
+static const MenuDisplayOps g_display = {
+    clear, clear_region, text, rect, fill_rect, line, image,
+    NULL /* begin */, NULL /* end */, row, status
+};
+
+/* 2. 定义页面：一行就是一个菜单项 */
+MENU_PAGE_BEGIN(page_main, "Main")
+    MENU_BOOL("Enabled", &g_enabled),
+    MENU_U16_STEPS("Target", &g_target, 0, 1000, steps, 3U),
+    MENU_LIVE_VAR("Speed", MENU_VALUE_FLOAT, &g_speed, 1U, "rpm"),
+    MENU_ACTION("Save", action_save),
+    MENU_SUBMENU("More", &page_more)
+MENU_PAGE_END(page_main, "Main", NULL);
+
+/* 3. 初始化一次 */
+static Menu g_menu;
+menu_init(&g_menu, &page_main, &g_display, NULL, NULL);
+
+/* 4. 把板级输入翻译成语义事件 */
+MenuEvent event = { MENU_KEY_UP, MENU_KEY_SHORT };
+menu_handle_event(&g_menu, &event);
+
+/* 5. 周期任务里推进（示例工程用 10 ms 一次） */
+menu_tick(&g_menu, now_ms);
 ```
 
-对应：
-- `MENU_KEY_1`
-- `MENU_KEY_2`
-- `MENU_KEY_3`
-- `MENU_KEY_4`
+更完整的接入步骤、配置宏清单与页面写法见 [`menu/README.md`](menu/README.md)。
 
-当前菜单实际只用到了：
-- `KEY1 短按`：进入/确认
-- `KEY1 长按`：返回
+## 跑测试
 
----
-
-## 编码器
-在 `menu.h` 中定义：
-
-```c
-#define MENU_ENCODER_A_PIN P20_3
-#define MENU_ENCODER_B_PIN P20_0
-```
-
-作用：
-- 编码器转动控制菜单上下移动
-
----
-
-## 屏幕
-这份菜单默认使用：
-
-```c
-ips200_init(IPS200_TYPE_SPI);
-```
-
-也就是 **IPS200 SPI 屏幕**。
-
-如果你后面改成并口屏，可以把 `menu.c` 中：
-
-```c
-ips200_init(IPS200_TYPE_SPI);
-```
-
-改成：
-
-```c
-ips200_init(IPS200_TYPE_PARALLEL8);
-```
-
-或者把 `MENU_USE_IPS200_SPI` 宏改掉。
-
----
-
-# 4. 菜单操作方式
-
-当前交互规则：
-
-- **编码器旋转**：上下切换菜单项
-- **KEY1 短按**：进入子菜单 / 执行动作
-- **KEY1 长按**：返回上一级
-
----
-
-# 5. 如何接入到你的工程
-
-## 第一步：把文件拷进工程
-建议你放到类似位置：
+在仓库根目录执行：
 
 ```text
-code/menu_lite/
-    menu.c
-    menu.h
+pwsh -File tests/run.ps1
 ```
 
-然后加入 ADS 工程编译。
+也可以只用 gcc（需要 gcc 在 PATH）：
 
----
-
-## 第二步：在主程序里包含头文件
-例如在 `cpu0_main.c` 里：
-
-```c
-#include "menu.h"
+```text
+gcc -std=c99 -Wall -Wextra -pedantic -Imenu menu/menu.c tests/menu_core_test.c -o tests/menu_core_test.exe
+tests/menu_core_test.exe
 ```
 
----
-
-## 第三步：定义你的菜单树
-你需要自己在某个 `.c` 文件里定义 `MenuItem` 和 `MenuPage`。
-
-例如最简单示例：
-
-```c
-#include "menu.h"
-
-static void action_test_1(void)
-{
-    menu_set_status("Action 1 OK");
-}
-
-static void action_test_2(void)
-{
-    menu_set_status("Action 2 OK");
-}
-
-MenuItem pid_items[] = {
-    {"1. Edit Kp", action_test_1, 0},
-    {"2. Edit Ki", action_test_2, 0},
-};
-
-MenuPage pid_menu = {
-    "PID",
-    pid_items,
-    sizeof(pid_items) / sizeof(pid_items[0]),
-    0
-};
-
-MenuItem main_items[] = {
-    {"1. PID", 0, &pid_menu},
-};
-
-MenuPage main_menu = {
-    "Main",
-    main_items,
-    sizeof(main_items) / sizeof(main_items[0]),
-    0
-};
-```
-
----
-
-## 第四步：初始化菜单
-在 `core0_main()` 初始化区调用：
-
-```c
-menu_init(&main_menu);
-```
-
-注意：
-- `main_menu` 必须是你定义好的根菜单页
-
----
-
-## 第五步：主循环调用菜单任务
-在主循环中调用：
-
-```c
-while (TRUE)
-{
-    menu_task();
-}
-```
-
-如果你主循环里还有别的任务，可以这样：
-
-```c
-while (TRUE)
-{
-    other_task();
-    menu_task();
-}
-```
-
----
-
-# 6. 菜单项的三种写法
-
-## 写法 1：执行动作
-
-```c
-{"Save", action_save, 0}
-```
-
-表示：
-- 进入这个菜单项时，不跳子菜单
-- 直接执行 `action_save()`
-
----
-
-## 写法 2：进入子菜单
-
-```c
-{"PID", 0, &pid_menu}
-```
-
-表示：
-- 这个菜单项没有动作函数
-- 短按进入 `pid_menu`
-
----
-
-## 写法 3：空菜单项
-不建议这样写，但技术上可以：
-
-```c
-{"Reserved", 0, 0}
-```
-
-它会显示出来，但短按无效果。
-
----
-
-# 7. 如何写动作函数
-
-动作函数固定形式：
-
-```c
-static void action_xxx(void)
-{
-    // 你的代码
-}
-```
-
-例如：
-
-## 示例 1：显示状态提示
-```c
-static void action_beep(void)
-{
-    menu_set_status("Beep trigger");
-}
-```
-
-## 示例 2：切换某个标志位
-```c
-static uint8 led_enable = 0;
-
-static void action_led_toggle(void)
-{
-    led_enable = !led_enable;
-    if (led_enable)
-        menu_set_status("LED ON");
-    else
-        menu_set_status("LED OFF");
-}
-```
-
-## 示例 3：调用你原有业务函数
-```c
-static void action_start_gps(void)
-{
-    gnss_init(TAU1201);
-    menu_set_status("GPS Init Done");
-}
-```
-
----
-
-# 8. `menu_set_status()` 是干什么的
-
-这是给你专门留的一个简易状态显示接口。
-
-例如：
-
-```c
-menu_set_status("Path saved");
-```
-
-屏幕底部状态行会显示这句文字。
-
-适合用来提示：
-- 执行成功
-- 执行失败
-- 参数变化
-- 当前模式
-
----
-
-# 9. 如果你想把你现在的 GPS/PID 菜单迁回去，怎么做
-
-思路很简单：
-
-## 先迁菜单树
-把你原来：
-- `gps_items[]`
-- `pid_items[]`
-- `main_items[]`
-
-迁过来。
-
-## 再迁动作函数
-把你原来：
-- `gps_action_xxx()`
-- `pid_action_xxx()`
-
-按需一个一个加回来。
-
-## 最后再迁特殊页面
-这份最小版目前**没有集成 GPS 特殊数据页、PID 动态预览页**这种“菜单外页面模式”。
-
-如果你后面要恢复：
-- 动态数据显示页
-- 地图页
-- PID Preview 页
-
-建议做法是：
-- 先保留这份菜单做菜单骨架
-- 再额外加一个 `app_mode` 状态机
-- 在 `menu_task()` 之外切换到专用页面逻辑
-
-也就是说：
-**这份最小版适合作为基础菜单，不负责复杂业务页接管。**
-
----
-
-# 10. 当前版本的边界
-
-这份最小版已经包含：
-- 屏幕驱动调用
-- 按键驱动
-- 编码器驱动
-- 菜单绘制
-- 页面跳转
-- 动作执行
-
-但它**没有包含**：
-- GPS 页面
-- PID 编辑页
-- Flash 存档
-- 动态区域绘图
-- 图像预览
-
-这是故意的，因为你这次要的是**最小可移植版**。
-
----
-
-# 11. 推荐接入模板
-
-你可以按下面这个模板开始用：
-
-```c
-#include "myhead.h"
-#include "menu.h"
-
-static void action_test(void)
-{
-    menu_set_status("Test OK");
-}
-
-MenuItem sub_items[] = {
-    {"1. Test", action_test, 0},
-};
-
-MenuPage sub_menu = {
-    "SubMenu",
-    sub_items,
-    sizeof(sub_items) / sizeof(sub_items[0]),
-    0
-};
-
-MenuItem main_items[] = {
-    {"1. Enter", 0, &sub_menu},
-};
-
-MenuPage main_menu = {
-    "Main",
-    main_items,
-    sizeof(main_items) / sizeof(main_items[0]),
-    0
-};
-
-int core0_main(void)
-{
-    clock_init();
-    debug_init();
-
-    menu_init(&main_menu);
-
-    while (TRUE)
-    {
-        menu_task();
-    }
-}
-```
-
----
-
-# 12. 你后面如果继续要优化，优先改哪几个方向
-
-如果你后面想把它继续变强，我建议按这个顺序扩展：
-
-## 第一优先级
-- 增加 `KEY2/KEY3/KEY4` 功能
-- 增加更多状态提示
-
-## 第二优先级
-- 增加参数编辑项
-- 增加数值增减界面
-
-## 第三优先级
-- 增加“菜单模式 / 页面模式”切换
-- 支持 GPS 数据页、波形页、图像页
-
-## 第四优先级
-- 增加配置保存
-- 增加通用参数绑定机制
-
----
-
-# 13. 一句话总结
-
-这份 `menu.c + menu.h`：
-
-**适合你现在快速迁移、快速复用、快速起菜单。**
-
-如果你后面要，我还可以继续帮你做第二版：
-- 加参数编辑
-- 加专用页面
-- 加保存机制
-- 加更完整的通用菜单框架
+测试覆盖：实时数值行的脏检测与局部重画、读取失败显示 `?`、枚举标签、跨子页缓存失效、
+实时页 `draw`/`update`/`is_dirty` 的调用时机、编辑其它行时实时行继续刷新等。
+
+## 依赖与许可
+
+- `menu/menu.h`、`menu/menu.c` 与文档是本仓库自己的代码，**不含任何第三方代码**，也不引入任何硬件头文件。
+- `menu/menu_app.c` 是 TC264 参考接入，编译它需要逐飞 TC264 开源库（GPL3）和 Infineon iLLD；
+  这些库**不在本仓库内**，请从各自来源获取并遵守各自的许可。
+- 本仓库自身的授权方式尚未确定（当前没有 LICENSE 文件）。
